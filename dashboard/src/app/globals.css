@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gradient-brand: linear-gradient(135deg, #FF9933, #f59e0b, #ec4899);
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #0a0a1a;
+  color: #e2e8f0;
+}
+
+.brand-gradient-text {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-gradient-bg {
+  background: var(--gradient-brand);
+}
+
+.hero-glow {
+  background: radial-gradient(ellipse at top, rgba(245, 158, 11, 0.15), transparent 60%);
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.card:hover {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.btn-primary {
+  background: var(--gradient-brand);
+  color: #fff;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(245, 158, 11, 0.3);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+input, textarea {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  color: #e2e8f0;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+input:focus, textarea:focus {
+  border-color: #f59e0b;
+}
+
+::selection {
+  background: rgba(245, 158, 11, 0.3);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0a0a1a; }
+::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(245, 158, 11, 0.5); }

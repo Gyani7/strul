@@ -1,0 +1,50 @@
+# ShorTul Worker — Cloudflare-first redirect engine
+# Update the KV namespace id, D1 database id, and queue names after creating them.
+
+name = "shortul-worker"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Cron Triggers ──────────────────────────────────────────────
+# 06:00 UTC = morning cache preload
+# 22:00 UTC = evening click sync
+[triggers]
+crons = ["0 6 * * *", "0 22 * * *"]
+
+# ── KV Namespace ────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "SHORTUL_KV"
+id = "YOUR_KV_NAMESPACE_ID"
+preview_id = "YOUR_KV_PREVIEW_ID"
+
+# ── D1 Database (click aggregation buffer) ─────────────────────
+[[d1_databases]]
+binding = "SHORTUL_DB"
+database_name = "shortul_db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+# ── Queue (async click events) ─────────────────────────────────
+[[queues.producers]]
+binding = "CLICK_QUEUE"
+queue = "shortul_clicks"
+
+[[queues.consumers]]
+binding = "CLICK_QUEUE"
+queue = "shortul_clicks"
+max_batch_size = 100
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "shortul_clicks_dlq"
+
+# Create DLQ manually:
+# npx wrangler queues queue create shortul_clicks_dlq
+
+# ── Environment Variables (non-secret) ──────────────────────────
+[vars]
+SITE_URL = "https://shortul.app"
+SUPABASE_URL = "https://your-project.supabase.co"
+SUPABASE_ANON_KEY = "your-anon-key"
+# Secrets (set via `wrangler secret put`):
+#   SUPABASE_SERVICE_ROLE_KEY
+#   ADMIN_SECRET
