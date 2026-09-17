@@ -1,45 +1,69 @@
-// ── Database helpers (Supabase + D1) ──────────────────────────
+// ─────────────────────────────────────────────────────────────
+// ShorTul Database Layer
+// Supabase = Primary DB
+// Cloudflare D1 = Click buffer / analytics staging
+// ─────────────────────────────────────────────────────────────
 
-// ============================================================
+const LINK_SELECT =
+  'id,shortcode,destination_url,title,description,is_active,expires_at,password_hash,creator_id,is_guest,permanent,created_at,updated_at';
+
+
+// ─────────────────────────────────────────────────────────────
 // SUPABASE REST
-// ============================================================
+// ─────────────────────────────────────────────────────────────
 
-async function supabaseRequest(env, table, method, options = {}) {
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
+async function supabaseRequest(
+  env,
+  table,
+  method,
+  options = {}
+) {
+  const serviceKey =
+    env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!serviceKey) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured');
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY is not configured'
+    );
   }
 
-  const base = `${env.SUPABASE_URL}/rest/v1/${table}`;
+  const base =
+    `${env.SUPABASE_URL}/rest/v1/${table}`;
+
+  let url = base;
+
+  if (options.query) {
+    const params = new URLSearchParams(
+      options.query
+    );
+
+    url = `${base}?${params.toString()}`;
+  }
 
   const headers = {
     apikey: serviceKey,
     authorization: `Bearer ${serviceKey}`,
     'content-type': 'application/json',
-    prefer: options.prefer || 'return=representation',
+    prefer:
+      options.prefer ||
+      'return=representation',
   };
 
-  let url = base;
-
-  if (options.query) {
-    const params = new URLSearchParams(options.query);
-    url = `${base}?${params.toString()}`;
-  }
-
-  const res = await fetch(url, {
+  const response = await fetch(url, {
     method,
     headers,
-    body: options.body !== undefined
-      ? JSON.stringify(options.body)
-      : undefined,
+    body:
+      options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined,
   });
 
-  if (!res.ok) {
-    const text = await res.text();
+  if (!response.ok) {
+    const text =
+      await response.text();
 
     throw new Error(
-      `Supabase ${method} ${table} failed: ${res.status} ${text}`
+      `Supabase ${method} ${table} failed: ${response.status} ${text}`
     );
   }
 
@@ -47,7 +71,8 @@ async function supabaseRequest(env, table, method, options = {}) {
     return null;
   }
 
-  const text = await res.text();
+  const text =
+    await response.text();
 
   if (!text) {
     return [];
@@ -56,157 +81,179 @@ async function supabaseRequest(env, table, method, options = {}) {
   return JSON.parse(text);
 }
 
-// ============================================================
-// LINK SELECT
-// ============================================================
 
-const LINK_SELECT =
-  'id,shortcode,destination_url,title,is_active,expires_at,password_hash,creator_id,is_guest,permanent';
+// ─────────────────────────────────────────────────────────────
+// LINKS
+// ─────────────────────────────────────────────────────────────
 
-// ============================================================
-// FETCH LINK BY SHORTCODE
-// ============================================================
+export async function fetchLinkFromDB(
+  env,
+  shortcode
+) {
+  const rows =
+    await supabaseRequest(
+      env,
+      'links',
+      'GET',
+      {
+        query: {
+          select: LINK_SELECT,
+          shortcode: `eq.${shortcode}`,
+          limit: '1',
+        },
+        prefer: 'return=representation',
+      }
+    );
 
-export async function fetchLinkFromDB(env, shortcode) {
-  if (!shortcode) return null;
-
-  const rows = await supabaseRequest(env, 'links', 'GET', {
-    query: {
-      select: LINK_SELECT,
-      shortcode: `eq.${shortcode}`,
-      limit: '1',
-    },
-  });
-
-  return rows && rows.length > 0 ? rows[0] : null;
+  return rows[0] || null;
 }
 
-// ============================================================
-// FETCH LINK BY ID
-// ============================================================
 
-export async function fetchLinkById(env, id) {
-  if (!id) return null;
+export async function fetchLinkById(
+  env,
+  id
+) {
+  const rows =
+    await supabaseRequest(
+      env,
+      'links',
+      'GET',
+      {
+        query: {
+          select: LINK_SELECT,
+          id: `eq.${id}`,
+          limit: '1',
+        },
+      }
+    );
 
-  const rows = await supabaseRequest(env, 'links', 'GET', {
-    query: {
-      select: LINK_SELECT,
-      id: `eq.${id}`,
-      limit: '1',
-    },
-  });
-
-  return rows && rows.length > 0 ? rows[0] : null;
+  return rows[0] || null;
 }
 
-// ============================================================
-// FETCH USER'S LINK BY ID
-// ============================================================
 
-export async function fetchUserLinkById(env, id, userId) {
-  if (!id || !userId) return null;
+export async function fetchUserLinkById(
+  env,
+  id,
+  userId
+) {
+  const rows =
+    await supabaseRequest(
+      env,
+      'links',
+      'GET',
+      {
+        query: {
+          select: LINK_SELECT,
+          id: `eq.${id}`,
+          creator_id: `eq.${userId}`,
+          limit: '1',
+        },
+      }
+    );
 
-  const rows = await supabaseRequest(env, 'links', 'GET', {
-    query: {
-      select: LINK_SELECT,
-      id: `eq.${id}`,
-      creator_id: `eq.${userId}`,
-      limit: '1',
-    },
-  });
-
-  return rows && rows.length > 0 ? rows[0] : null;
+  return rows[0] || null;
 }
 
-// ============================================================
-// FETCH ALL ACTIVE LINKS
-// Used by morning KV preload.
-// ============================================================
 
-export async function fetchAllActiveLinks(env) {
-  const all = [];
+export async function fetchAllActiveLinks(
+  env
+) {
+  const rows =
+    await supabaseRequest(
+      env,
+      'links',
+      'GET',
+      {
+        query: {
+          select: LINK_SELECT,
+          is_active: 'eq.true',
+          or:
+            '(expires_at.is.null,expires_at.gt.' +
+            new Date().toISOString() +
+            ')',
+        },
+      }
+    );
 
-  let offset = 0;
+  return Array.isArray(rows)
+    ? rows
+    : [];
+}
 
-  const pageSize = 1000;
 
-  while (true) {
-    const batch = await supabaseRequest(env, 'links', 'GET', {
+export async function fetchExpiredLinks(
+  env
+) {
+  const now =
+    new Date().toISOString();
+
+  const rows =
+    await supabaseRequest(
+      env,
+      'links',
+      'GET',
+      {
+        query: {
+          select:
+            'id,shortcode,is_active,expires_at',
+          or:
+            `(is_active.eq.false,expires_at.lt.${now})`,
+          limit: '5000',
+        },
+      }
+    );
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// CREATE
+// ─────────────────────────────────────────────────────────────
+
+export async function createLinkInDB(
+  env,
+  linkData
+) {
+  return await supabaseRequest(
+    env,
+    'links',
+    'POST',
+    {
+      body: linkData,
+      prefer:
+        'return=representation',
+    }
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// UPDATE
+// ─────────────────────────────────────────────────────────────
+
+export async function updateLinkInDB(
+  env,
+  id,
+  updates
+) {
+  return await supabaseRequest(
+    env,
+    'links',
+    'PATCH',
+    {
       query: {
-        select: LINK_SELECT,
-        is_active: 'eq.true',
-        order: 'id.asc',
-        limit: String(pageSize),
-        offset: String(offset),
+        id: `eq.${id}`,
       },
-    });
-
-    if (!batch || batch.length === 0) {
-      break;
+      body: updates,
+      prefer:
+        'return=representation',
     }
-
-    all.push(...batch);
-
-    if (batch.length < pageSize) {
-      break;
-    }
-
-    offset += pageSize;
-  }
-
-  return all;
+  );
 }
 
-// ============================================================
-// FETCH EXPIRED / INACTIVE LINKS
-// ============================================================
-
-export async function fetchExpiredLinks(env) {
-  const now = new Date().toISOString();
-
-  const rows = await supabaseRequest(env, 'links', 'GET', {
-    query: {
-      select: 'shortcode',
-      or: `(is_active.eq.false,expires_at.lt.${now})`,
-      limit: '1000',
-    },
-  });
-
-  return rows || [];
-}
-
-// ============================================================
-// CREATE LINK
-// ============================================================
-
-export async function createLinkInDB(env, linkData) {
-  return supabaseRequest(env, 'links', 'POST', {
-    body: linkData,
-    prefer: 'return=representation',
-  });
-}
-
-// ============================================================
-// UPDATE LINK
-// ============================================================
-
-export async function updateLinkInDB(env, id, updates) {
-  if (!id) {
-    throw new Error('Link ID is required');
-  }
-
-  return supabaseRequest(env, 'links', 'PATCH', {
-    query: {
-      id: `eq.${id}`,
-    },
-    body: updates,
-    prefer: 'return=representation',
-  });
-}
-
-// ============================================================
-// UPDATE USER'S OWN LINK
-// ============================================================
 
 export async function updateUserLinkInDB(
   env,
@@ -214,113 +261,82 @@ export async function updateUserLinkInDB(
   userId,
   updates
 ) {
-  if (!id || !userId) {
-    throw new Error('Link ID and user ID are required');
-  }
-
-  return supabaseRequest(env, 'links', 'PATCH', {
-    query: {
-      id: `eq.${id}`,
-      creator_id: `eq.${userId}`,
-    },
-    body: updates,
-    prefer: 'return=representation',
-  });
+  return await supabaseRequest(
+    env,
+    'links',
+    'PATCH',
+    {
+      query: {
+        id: `eq.${id}`,
+        creator_id: `eq.${userId}`,
+      },
+      body: updates,
+      prefer:
+        'return=representation',
+    }
+  );
 }
 
-// ============================================================
-// DELETE LINK
-// ============================================================
 
-export async function deleteLinkFromDB(env, id) {
-  if (!id) {
-    throw new Error('Link ID is required');
-  }
+// ─────────────────────────────────────────────────────────────
+// DELETE
+// ─────────────────────────────────────────────────────────────
 
-  return supabaseRequest(env, 'links', 'DELETE', {
-    query: {
-      id: `eq.${id}`,
-    },
-    prefer: 'return=minimal',
-  });
+export async function deleteLinkFromDB(
+  env,
+  id
+) {
+  await supabaseRequest(
+    env,
+    'links',
+    'DELETE',
+    {
+      query: {
+        id: `eq.${id}`,
+      },
+      prefer:
+        'return=minimal',
+    }
+  );
 }
 
-// ============================================================
-// DELETE USER'S OWN LINK
-// ============================================================
 
 export async function deleteUserLinkFromDB(
   env,
   id,
   userId
 ) {
-  if (!id || !userId) {
-    throw new Error('Link ID and user ID are required');
-  }
-
-  return supabaseRequest(env, 'links', 'DELETE', {
-    query: {
-      id: `eq.${id}`,
-      creator_id: `eq.${userId}`,
-    },
-    prefer: 'return=minimal',
-  });
-}
-
-// ============================================================
-// CLICK STATISTICS
-// ============================================================
-
-export async function batchUpsertClickStats(env, rows) {
-  if (!rows || rows.length === 0) {
-    return;
-  }
-
-  return supabaseRequest(
+  await supabaseRequest(
     env,
-    'click_statistics',
-    'POST',
+    'links',
+    'DELETE',
     {
-      body: rows,
-      prefer: 'resolution=merge-duplicates,return=minimal',
+      query: {
+        id: `eq.${id}`,
+        creator_id: `eq.${userId}`,
+      },
+      prefer:
+        'return=minimal',
     }
   );
 }
 
-// ============================================================
-// DAILY STATISTICS
-// ============================================================
 
-export async function batchUpsertDailyStats(env, rows) {
-  if (!rows || rows.length === 0) {
-    return;
-  }
+// ─────────────────────────────────────────────────────────────
+// D1 CLICK BUFFER
+// ─────────────────────────────────────────────────────────────
 
-  return supabaseRequest(
-    env,
-    'daily_statistics',
-    'POST',
-    {
-      body: rows,
-      prefer: 'resolution=merge-duplicates,return=minimal',
-    }
-  );
-}
+export async function d1RecordClick(
+  env,
+  event
+) {
+  const eventId =
+    event.event_id ||
+    crypto.randomUUID();
 
-// ============================================================
-// D1 CLICK INSERT
-// Duplicate event_id is ignored.
-// ============================================================
-
-export async function d1RecordClick(env, event) {
-  if (!event || !event.shortcode) {
-    throw new Error('Invalid click event');
-  }
-
-  const eventId = event.event_id || crypto.randomUUID();
-
-  const stmt = env.SHORTUL_DB.prepare(`
-    INSERT OR IGNORE INTO click_buffer
+  const stmt =
+    env.SHORTUL_DB.prepare(`
+      INSERT OR IGNORE INTO click_buffer
       (
         event_id,
         shortcode,
@@ -331,13 +347,13 @@ export async function d1RecordClick(env, event) {
         visitor_hash,
         synced
       )
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-  `);
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `);
 
   await stmt.bind(
     eventId,
     event.shortcode,
-    event.clicked_at || new Date().toISOString(),
+    event.clicked_at,
     event.country || null,
     event.device_type || null,
     event.referrer || null,
@@ -345,94 +361,272 @@ export async function d1RecordClick(env, event) {
   ).run();
 }
 
-// ============================================================
-// D1 READ AGGREGATES
-// ============================================================
 
-export async function d1ReadAggregates(env) {
-  const stmt = env.SHORTUL_DB.prepare(`
-    SELECT
-      shortcode,
-      DATE(clicked_at) AS click_date,
-      strftime('%H', clicked_at) AS click_hour,
-      country,
-      device_type,
-      referrer,
-      COUNT(*) AS click_count,
-      COUNT(DISTINCT visitor_hash) AS unique_visitors
-    FROM click_buffer
-    WHERE synced = 0
-    GROUP BY
-      shortcode,
-      click_date,
-      click_hour,
-      country,
-      device_type,
-      referrer
-    ORDER BY
-      click_date ASC,
-      click_hour ASC
-  `);
+// ─────────────────────────────────────────────────────────────
+// SYNC SNAPSHOT
+// ─────────────────────────────────────────────────────────────
+//
+// IMPORTANT:
+//
+// We first capture MAX(id).
+//
+// Any click arriving AFTER this point gets a larger ID
+// and remains unsynced for the next evening sync.
+//
+// This prevents click loss.
+// ─────────────────────────────────────────────────────────────
 
-  const result = await stmt.all();
+export async function d1GetSyncSnapshot(
+  env
+) {
+  const result =
+    await env.SHORTUL_DB.prepare(`
+      SELECT
+        COALESCE(
+          MAX(id),
+          0
+        ) AS max_id
+      FROM click_buffer
+      WHERE synced = 0
+    `).first();
 
-  return result.results || [];
+  return {
+    maxId: Number(
+      result?.max_id || 0
+    ),
+  };
 }
 
-// ============================================================
-// D1 MARK SYNCED
-// ============================================================
 
-export async function d1MarkSynced(env) {
+// ─────────────────────────────────────────────────────────────
+// HOURLY AGGREGATES
+// ─────────────────────────────────────────────────────────────
+
+export async function d1ReadAggregates(
+  env,
+  maxId
+) {
+  if (!maxId) {
+    return [];
+  }
+
+  const result =
+    await env.SHORTUL_DB.prepare(`
+      SELECT
+        shortcode,
+        substr(clicked_at, 1, 10) AS date,
+        substr(clicked_at, 12, 2) AS hour,
+        country,
+        device_type,
+        referrer,
+        COUNT(*) AS clicks,
+        COUNT(
+          DISTINCT visitor_hash
+        ) AS unique_visitors
+      FROM click_buffer
+      WHERE
+        synced = 0
+        AND id <= ?
+      GROUP BY
+        shortcode,
+        date,
+        hour,
+        country,
+        device_type,
+        referrer
+      ORDER BY
+        date,
+        hour
+    `)
+    .bind(maxId)
+    .all();
+
+  return result?.results || [];
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// DAILY UNIQUE VISITORS
+// ─────────────────────────────────────────────────────────────
+//
+// Do NOT calculate daily unique visitors by adding hourly
+// unique visitors. The same visitor may appear in multiple
+// hours.
+//
+// This query calculates the real daily DISTINCT count.
+// ─────────────────────────────────────────────────────────────
+
+export async function d1ReadDailyUnique(
+  env,
+  maxId
+) {
+  if (!maxId) {
+    return [];
+  }
+
+  const result =
+    await env.SHORTUL_DB.prepare(`
+      SELECT
+        shortcode,
+        substr(clicked_at, 1, 10) AS date,
+        COUNT(
+          DISTINCT visitor_hash
+        ) AS unique_visitors
+      FROM click_buffer
+      WHERE
+        synced = 0
+        AND id <= ?
+        AND visitor_hash IS NOT NULL
+      GROUP BY
+        shortcode,
+        date
+      ORDER BY
+        date
+    `)
+    .bind(maxId)
+    .all();
+
+  return result?.results || [];
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// MARK SYNCED
+// ─────────────────────────────────────────────────────────────
+//
+// ONLY rows inside the captured snapshot are marked synced.
+// New clicks remain untouched.
+// ─────────────────────────────────────────────────────────────
+
+export async function d1MarkSynced(
+  env,
+  maxId
+) {
+  if (!maxId) {
+    return;
+  }
+
   await env.SHORTUL_DB.prepare(`
     UPDATE click_buffer
     SET synced = 1
-    WHERE synced = 0
-  `).run();
+    WHERE
+      synced = 0
+      AND id <= ?
+  `)
+    .bind(maxId)
+    .run();
 }
 
-// ============================================================
-// D1 CLEANUP
-// Keep synced rows for 7 days.
-// ============================================================
 
-export async function d1CleanupSynced(env) {
+// ─────────────────────────────────────────────────────────────
+// CLEANUP
+// ─────────────────────────────────────────────────────────────
+
+export async function d1CleanupSynced(
+  env
+) {
   await env.SHORTUL_DB.prepare(`
     DELETE FROM click_buffer
-    WHERE synced = 1
-      AND clicked_at < datetime('now', '-7 days')
+    WHERE
+      synced = 1
+      AND clicked_at <
+        datetime('now', '-7 days')
   `).run();
 }
 
-// ============================================================
-// D1 ADMIN STATS
-// ============================================================
 
-export async function d1AdminStats(env) {
-  const totalClicks = await env.SHORTUL_DB.prepare(`
-    SELECT COUNT(*) AS cnt
-    FROM click_buffer
-  `).first();
+// ─────────────────────────────────────────────────────────────
+// SUPABASE CLICK STATISTICS
+// ─────────────────────────────────────────────────────────────
 
-  const todayClicks = await env.SHORTUL_DB.prepare(`
-    SELECT COUNT(*) AS cnt
-    FROM click_buffer
-    WHERE DATE(clicked_at) = DATE('now')
-  `).first();
+export async function batchUpsertClickStats(
+  env,
+  rows
+) {
+  if (!rows?.length) {
+    return;
+  }
 
-  const topLinks = await env.SHORTUL_DB.prepare(`
-    SELECT
-      shortcode,
-      COUNT(*) AS clicks
-    FROM click_buffer
-    GROUP BY shortcode
-    ORDER BY clicks DESC
-    LIMIT 10
-  `).all();
+  await supabaseRequest(
+    env,
+    'click_statistics',
+    'POST',
+    {
+      body: rows,
+      prefer:
+        'resolution=merge-duplicates,return=minimal',
+    }
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SUPABASE DAILY STATISTICS
+// ─────────────────────────────────────────────────────────────
+
+export async function batchUpsertDailyStats(
+  env,
+  rows
+) {
+  if (!rows?.length) {
+    return;
+  }
+
+  await supabaseRequest(
+    env,
+    'daily_statistics',
+    'POST',
+    {
+      body: rows,
+      prefer:
+        'resolution=merge-duplicates,return=minimal',
+    }
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// ADMIN STATS
+// ─────────────────────────────────────────────────────────────
+
+export async function d1AdminStats(
+  env
+) {
+  const total =
+    await env.SHORTUL_DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM click_buffer
+    `).first();
+
+  const today =
+    await env.SHORTUL_DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM click_buffer
+      WHERE substr(clicked_at, 1, 10)
+        = date('now')
+    `).first();
+
+  const top =
+    await env.SHORTUL_DB.prepare(`
+      SELECT
+        shortcode,
+        COUNT(*) AS clicks
+      FROM click_buffer
+      GROUP BY shortcode
+      ORDER BY clicks DESC
+      LIMIT 20
+    `).all();
 
   return {
-    total_clicks: Number(totalClicks?.cnt || 0),
-    today_clicks: Number(todayClicks?.cnt || 0),
-    top_links: topLinks.results || [],
+    total_clicks: Number(
+      total?.total || 0
+    ),
+
+    today_clicks: Number(
+      today?.total || 0
+    ),
+
+    top_links:
+      top?.results || [],
   };
 }
