@@ -2,15 +2,15 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-let supabaseInstance = null;
-
-function getSupabaseClient() {
-if (supabaseInstance) {
-return supabaseInstance;
-}
-
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+let supabaseClient = null;
+
+function createSupabaseClient() {
+if (supabaseClient) {
+return supabaseClient;
+}
 
 if (!supabaseUrl || !supabaseAnonKey) {
 throw new Error(
@@ -18,7 +18,7 @@ throw new Error(
 );
 }
 
-supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
 auth: {
 persistSession: true,
 autoRefreshToken: true,
@@ -26,47 +26,26 @@ detectSessionInUrl: true,
 },
 });
 
-return supabaseInstance;
+return supabaseClient;
 }
 
 /*
 
-* Backward-compatible Supabase client.
-* 
-* Existing files use:
-* import { supabase } from '@/lib/supabase';
-* 
-* Keep that API while creating the real client only when
-* a Supabase operation is actually used.
+* Keep the original "supabase" API used throughout the application,
+* while avoiding createClient() during module import.
   */
-  export const supabase = {
-  get auth() {
-  return getSupabaseClient().auth;
+  export const supabase = new Proxy(
+  {},
+  {
+  get(_target, property) {
+  const client = createSupabaseClient();
+  return client[property];
   },
-
-from(...args) {
-return getSupabaseClient().from(...args);
-},
-
-rpc(...args) {
-return getSupabaseClient().rpc(...args);
-},
-
-channel(...args) {
-return getSupabaseClient().channel(...args);
-},
-
-removeChannel(...args) {
-return getSupabaseClient().removeChannel(...args);
-},
-
-get storage() {
-return getSupabaseClient().storage;
-},
-};
+  }
+  );
 
 export async function signUp(email, password, displayName) {
-return await getSupabaseClient().auth.signUp({
+const { data, error } = await createSupabaseClient().auth.signUp({
 email,
 password,
 options: {
@@ -75,29 +54,28 @@ display_name: displayName,
 },
 },
 });
+
+return { data, error };
 }
 
 export async function signIn(email, password) {
-return await getSupabaseClient().auth.signInWithPassword({
+const { data, error } =
+await createSupabaseClient().auth.signInWithPassword({
 email,
 password,
 });
+
+return { data, error };
 }
 
 export async function signOut() {
-return await getSupabaseClient().auth.signOut();
+return await createSupabaseClient().auth.signOut();
 }
 
 export async function getSession() {
 const {
 data: { session },
-error,
-} = await getSupabaseClient().auth.getSession();
-
-if (error) {
-console.error('Supabase getSession error:', error);
-return null;
-}
+} = await createSupabaseClient().auth.getSession();
 
 return session;
 }
@@ -105,13 +83,7 @@ return session;
 export async function getCurrentUser() {
 const {
 data: { user },
-error,
-} = await getSupabaseClient().auth.getUser();
-
-if (error) {
-console.error('Supabase getCurrentUser error:', error);
-return null;
-}
+} = await createSupabaseClient().auth.getUser();
 
 return user;
 }
