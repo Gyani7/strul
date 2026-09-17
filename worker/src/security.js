@@ -1,23 +1,55 @@
 // ── Security utilities ─────────────────────────────────────────
 
-const DANGEROUS_PROTOCOLS = ['javascript:', 'data:', 'file:', 'vbscript:', 'about:'];
+const DANGEROUS_PROTOCOLS = [
+  'javascript:',
+  'data:',
+  'file:',
+  'vbscript:',
+  'about:',
+];
 
 export function safeRedirect(url) {
   if (!url || typeof url !== 'string') return false;
+
   let parsed;
+
   try {
     parsed = new URL(url);
   } catch {
     return false;
   }
-  // HTTPS only (allow http for localhost dev)
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
-  if (DANGEROUS_PROTOCOLS.includes(parsed.protocol)) return false;
-  // Block localhost in production
-  if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+
+  // Production: HTTPS only.
+  // HTTP is allowed only for non-production localhost development.
+  if (parsed.protocol !== 'https:') {
+    if (
+      parsed.protocol !== 'http:' ||
+      !isLocalDevelopmentHost(parsed.hostname)
+    ) {
+      return false;
+    }
+  }
+
+  if (DANGEROUS_PROTOCOLS.includes(parsed.protocol)) {
     return false;
   }
+
+  // Never allow local/private development targets in production.
+  if (isLocalDevelopmentHost(parsed.hostname)) {
+    return false;
+  }
+
   return true;
+}
+
+function isLocalDevelopmentHost(hostname) {
+  const host = String(hostname || '').toLowerCase();
+
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1'
+  );
 }
 
 export function isHttpsUrl(url) {
@@ -29,31 +61,45 @@ export function isHttpsUrl(url) {
   }
 }
 
-// Simple in-KV rate limiter
-// limit per key: max requests per window seconds
+// ── Simple KV rate limiter ────────────────────────────────────
+// Kept compatible with the current Worker architecture.
+// Redirect optimization will avoid making this unnecessarily
+// expensive for every normal KV-hit redirect.
+
 export async function rateLimitKey(env, key, windowSec, maxReq) {
   const now = Math.floor(Date.now() / 1000);
   const windowKey = Math.floor(now / windowSec);
   const fullKey = `${key}:${windowKey}`;
 
   try {
-    const current = parseInt(await env.SHORTUL_KV.get(fullKey) || '0', 10);
+    const current = Number(
+      await env.SHORTUL_KV.get(fullKey) || '0'
+    );
+
     if (current >= maxReq) {
       return { ok: false };
     }
-    await env.SHORTUL_KV.put(fullKey, String(current + 1), {
-      expirationTtl: windowSec,
-    });
+
+    await env.SHORTUL_KV.put(
+      fullKey,
+      String(current + 1),
+      {
+        expirationTtl: windowSec + 5,
+      }
+    );
+
     return { ok: true };
   } catch {
-    // If KV fails, allow the request (don't block redirects on RL failure)
+    // Never break a valid redirect because rate limiting failed.
     return { ok: true };
   }
 }
 
-// HTML escape for any user content rendered in pages
+// ── HTML escaping ──────────────────────────────────────────────
+
 export function escapeHtml(str) {
-  if (!str) return '';
+  if (str === null || str === undefined) return '';
+
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -62,24 +108,90 @@ export function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Verify admin token
+// ── Admin authentication ──────────────────────────────────────
+
 export function isAdmin(request, env) {
   const auth = request.headers.get('authorization');
-  if (!auth || !auth.startsWith('Bearer ')) return false;
-  return auth.slice(7) === env.ADMIN_SECRET;
+
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const token = auth.slice(7).trim();
+
+  if (!token || !env.ADMIN_SECRET) {
+    return false;
+  }
+
+  return token === env.ADMIN_SECRET;
 }
 
-// Verify Supabase JWT (basic check — Supabase validates server-side)
+// ── Supabase JWT payload extraction ────────────────────────────
+// IMPORTANT:
+// This function only decodes the JWT payload.
+// It does NOT cryptographically verify the Supabase token.
+//
+// Therefore API routes must not treat this as complete JWT
+// verification until Supabase JWT verification is configured.
+
 export function getAuthUser(request) {
   const auth = request.headers.get('authorization');
-  if (!auth || !auth.startsWith('Bearer ')) return null;
+
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = auth.slice(7).trim();
+
+  if (!token) {
+    return null;
+  }
+
   try {
-    const token = auth.slice(7);
     const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const payload = JSON.parse(atob(parts[1]));
-    return payload.sub ? payload : null;
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const payload = decodeJwtPayload(parts[1]);
+
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    if (!payload.sub || typeof payload.sub !== 'string') {
+      return null;
+    }
+
+    return {
+      ...payload,
+      _token: token,
+    };
   } catch {
     return null;
   }
+}
+
+// ── JWT payload decoder ───────────────────────────────────────
+
+function decodeJwtPayload(encoded) {
+  // JWT uses base64url, not normal base64.
+  const normalized = encoded
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  const padded =
+    normalized + '='.repeat((4 - normalized.length % 4) % 4);
+
+  const binary = atob(padded);
+
+  const bytes = Uint8Array.from(
+    binary,
+    char => char.charCodeAt(0)
+  );
+
+  const json = new TextDecoder().decode(bytes);
+
+  return JSON.parse(json);
 }
