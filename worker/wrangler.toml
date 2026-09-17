@@ -1,50 +1,35 @@
-# ShorTul Worker — Cloudflare-first redirect engine
-# Update the KV namespace id, D1 database id, and queue names after creating them.
-
-name = "shortul-worker"
+name = "strul"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# ── Cron Triggers ──────────────────────────────────────────────
-# 06:00 UTC = morning cache preload
-# 22:00 UTC = evening click sync
 [triggers]
-crons = ["0 6 * * *", "0 22 * * *"]
+crons = ["30 0 * * *", "30 16 * * *"]
 
-# ── KV Namespace ────────────────────────────────────────────────
+# ── KV ─────────────────────────────────────
 [[kv_namespaces]]
 binding = "SHORTUL_KV"
-id = "YOUR_KV_NAMESPACE_ID"
-preview_id = "YOUR_KV_PREVIEW_ID"
+id = "f2a33fdb29004512bd02f9cbf8eaa8e7"
 
-# ── D1 Database (click aggregation buffer) ─────────────────────
+# ── D1 ─────────────────────────────────────
 [[d1_databases]]
 binding = "SHORTUL_DB"
 database_name = "shortul_db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "056a0738-ccd5-4847-a639-ca5292d41be1"
 
-# ── Queue (async click events) ─────────────────────────────────
+# ── Queue ──────────────────────────────────
 [[queues.producers]]
 binding = "CLICK_QUEUE"
-queue = "shortul_clicks"
+queue = "shortul"
 
 [[queues.consumers]]
-binding = "CLICK_QUEUE"
-queue = "shortul_clicks"
+queue = "shortul"
 max_batch_size = 100
 max_batch_timeout = 30
 max_retries = 3
-dead_letter_queue = "shortul_clicks_dlq"
 
-# Create DLQ manually:
-# npx wrangler queues queue create shortul_clicks_dlq
-
-# ── Environment Variables (non-secret) ──────────────────────────
+# ── Variables ──────────────────────────────
 [vars]
 SITE_URL = "https://shortul.app"
 SUPABASE_URL = "https://umthaxqbsqijuuhsdvqc.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_8YoKXkChlkmIHLS428C__A_vKz8wZuZ"
-# Secrets (set via `wrangler secret put`):
-#   SUPABASE_SERVICE_ROLE_KEY
-#   ADMIN_SECRET
