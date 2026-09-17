@@ -1,35 +1,74 @@
 name = "strul"
 main = "src/index.js"
+
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-[triggers]
-crons = ["30 0 * * *", "30 16 * * *"]
+# ─────────────────────────────────────────────────────────────
+# CRON
+# 00:30 UTC = 06:00 IST
+# 16:30 UTC = 22:00 IST
+# ─────────────────────────────────────────────────────────────
 
-# ── KV ─────────────────────────────────────
+[triggers]
+crons = [
+  "30 0 * * *",
+  "30 16 * * *"
+]
+
+
+# ─────────────────────────────────────────────────────────────
+# KV
+# ─────────────────────────────────────────────────────────────
+
 [[kv_namespaces]]
 binding = "SHORTUL_KV"
 id = "f2a33fdb29004512bd02f9cbf8eaa8e7"
 
-# ── D1 ─────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# D1
+# ─────────────────────────────────────────────────────────────
+
 [[d1_databases]]
 binding = "SHORTUL_DB"
 database_name = "shortul_db"
 database_id = "056a0738-ccd5-4847-a639-ca5292d41be1"
 
-# ── Queue ──────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# QUEUE PRODUCER
+# ─────────────────────────────────────────────────────────────
+
 [[queues.producers]]
 binding = "CLICK_QUEUE"
 queue = "shortul"
 
+
+# ─────────────────────────────────────────────────────────────
+# QUEUE CONSUMER
+# ─────────────────────────────────────────────────────────────
+
 [[queues.consumers]]
 queue = "shortul"
+
 max_batch_size = 100
 max_batch_timeout = 30
 max_retries = 3
 
-# ── Variables ──────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# PUBLIC VARIABLES
+# ─────────────────────────────────────────────────────────────
+
 [vars]
+
 SITE_URL = "https://shortul.app"
+
 SUPABASE_URL = "https://umthaxqbsqijuuhsdvqc.supabase.co"
-SUPABASE_ANON_KEY = "sb_publishable_8YoKXkChlkmIHLS428C__A_vKz8wZuZ"
+
+# Put your actual frontend/origin URL here if different.
+# Example:
+# ORIGIN_URL = "https://your-pages-project.pages.dev"
+
+ORIGIN_URL = "https://shortul-pages.pages.dev"
