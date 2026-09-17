@@ -63,7 +63,7 @@ max_retries = 3
 
 [vars]
 
-SITE_URL = "https://shortul.app"
+SITE_URL = "https://dashboard-eta-five-90.vercel.app/"
 
 SUPABASE_URL = "https://umthaxqbsqijuuhsdvqc.supabase.co"
 
