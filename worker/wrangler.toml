@@ -43,8 +43,8 @@ dead_letter_queue = "shortul_clicks_dlq"
 # ── Environment Variables (non-secret) ──────────────────────────
 [vars]
 SITE_URL = "https://shortul.app"
-SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_ANON_KEY = "your-anon-key"
+SUPABASE_URL = "https://umthaxqbsqijuuhsdvqc.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_8YoKXkChlkmIHLS428C__A_vKz8wZuZ"
 # Secrets (set via `wrangler secret put`):
 #   SUPABASE_SERVICE_ROLE_KEY
 #   ADMIN_SECRET
