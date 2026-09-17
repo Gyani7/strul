@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 let supabaseInstance = null;
 
-function getSupabase() {
+function getSupabaseClient() {
 if (supabaseInstance) {
 return supabaseInstance;
 }
@@ -22,34 +22,19 @@ supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
 auth: {
 persistSession: true,
 autoRefreshToken: true,
+detectSessionInUrl: true,
 },
 });
 
 return supabaseInstance;
 }
 
-export const supabase = {
-get auth() {
-return getSupabase().auth;
-},
-
-from(...args) {
-return getSupabase().from(...args);
-},
-
-rpc(...args) {
-return getSupabase().rpc(...args);
-},
-
-storage: {
-get from() {
-return (...args) => getSupabase().storage.from(...args);
-},
-},
-};
+export function getSupabase() {
+return getSupabaseClient();
+}
 
 export async function signUp(email, password, displayName) {
-const { data, error } = await getSupabase().auth.signUp({
+return await getSupabaseClient().auth.signUp({
 email,
 password,
 options: {
@@ -58,27 +43,29 @@ display_name: displayName,
 },
 },
 });
-
-return { data, error };
 }
 
 export async function signIn(email, password) {
-const { data, error } = await getSupabase().auth.signInWithPassword({
+return await getSupabaseClient().auth.signInWithPassword({
 email,
 password,
 });
-
-return { data, error };
 }
 
 export async function signOut() {
-await getSupabase().auth.signOut();
+return await getSupabaseClient().auth.signOut();
 }
 
 export async function getSession() {
 const {
 data: { session },
-} = await getSupabase().auth.getSession();
+error,
+} = await getSupabaseClient().auth.getSession();
+
+if (error) {
+console.error('Supabase getSession error:', error);
+return null;
+}
 
 return session;
 }
@@ -86,7 +73,13 @@ return session;
 export async function getCurrentUser() {
 const {
 data: { user },
-} = await getSupabase().auth.getUser();
+error,
+} = await getSupabaseClient().auth.getUser();
+
+if (error) {
+console.error('Supabase getCurrentUser error:', error);
+return null;
+}
 
 return user;
 }
