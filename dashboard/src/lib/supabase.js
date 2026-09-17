@@ -29,9 +29,41 @@ detectSessionInUrl: true,
 return supabaseInstance;
 }
 
-export function getSupabase() {
-return getSupabaseClient();
-}
+/*
+
+* Backward-compatible Supabase client.
+* 
+* Existing files use:
+* import { supabase } from '@/lib/supabase';
+* 
+* Keep that API while creating the real client only when
+* a Supabase operation is actually used.
+  */
+  export const supabase = {
+  get auth() {
+  return getSupabaseClient().auth;
+  },
+
+from(...args) {
+return getSupabaseClient().from(...args);
+},
+
+rpc(...args) {
+return getSupabaseClient().rpc(...args);
+},
+
+channel(...args) {
+return getSupabaseClient().channel(...args);
+},
+
+removeChannel(...args) {
+return getSupabaseClient().removeChannel(...args);
+},
+
+get storage() {
+return getSupabaseClient().storage;
+},
+};
 
 export async function signUp(email, password, displayName) {
 return await getSupabaseClient().auth.signUp({
