@@ -238,8 +238,3 @@ export async function adminUpdateDestination(
   }
 }
 
-Ab "dashboard/src/lib/api.js" save → GitHub commit → push karo.
-
-Ek important security point: "adminSecret" ko frontend mein hard-code mat karna. Admin endpoints ko ideally server-side/Worker authentication se protect karna chahiye.
-
-Uske baad Create Short Link dobara test karo. Agar ab bhi "Something went wrong" aaye, next culprit "worker/src/api.js" hoga; phir uska full code dekhkar "/api/shorten" ko dashboard ke request format ke saath match karenge.
