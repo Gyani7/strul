@@ -27,6 +27,12 @@ async function supabaseRequest(
     );
   }
 
+  if (!env.SUPABASE_URL) {
+    throw new Error(
+      'SUPABASE_URL is not configured'
+    );
+  }
+
   const base =
     `${env.SUPABASE_URL}/rest/v1/${table}`;
 
@@ -101,7 +107,8 @@ export async function fetchLinkFromDB(
           shortcode: `eq.${shortcode}`,
           limit: '1',
         },
-        prefer: 'return=representation',
+        prefer:
+          'return=representation',
       }
     );
 
@@ -155,31 +162,84 @@ export async function fetchUserLinkById(
 }
 
 
+// ─────────────────────────────────────────────────────────────
+// FETCH ALL ACTIVE LINKS
+// ─────────────────────────────────────────────────────────────
+//
+// Supabase REST normally limits large responses.
+// We therefore load active links in pages of 1000.
+//
+// Example:
+// 500 links   → 1 request
+// 5000 links  → 5 requests
+// 10000 links → 10 requests
+//
+// This is mainly used by the morning KV preload job.
+// Redirects do NOT use this function.
+// ─────────────────────────────────────────────────────────────
+
 export async function fetchAllActiveLinks(
   env
 ) {
-  const rows =
-    await supabaseRequest(
-      env,
-      'links',
-      'GET',
-      {
-        query: {
-          select: LINK_SELECT,
-          is_active: 'eq.true',
-          or:
-            '(expires_at.is.null,expires_at.gt.' +
-            new Date().toISOString() +
-            ')',
-        },
-      }
-    );
+  const allLinks = [];
 
-  return Array.isArray(rows)
-    ? rows
-    : [];
+  const pageSize = 1000;
+
+  let offset = 0;
+
+  const now =
+    new Date().toISOString();
+
+  while (true) {
+    const rows =
+      await supabaseRequest(
+        env,
+        'links',
+        'GET',
+        {
+          query: {
+            select: LINK_SELECT,
+
+            is_active:
+              'eq.true',
+
+            or:
+              `(expires_at.is.null,expires_at.gt.${now})`,
+
+            order:
+              'id.asc',
+
+            limit:
+              String(pageSize),
+
+            offset:
+              String(offset),
+          },
+        }
+      );
+
+    const page =
+      Array.isArray(rows)
+        ? rows
+        : [];
+
+    allLinks.push(...page);
+
+    // Last page reached.
+    if (page.length < pageSize) {
+      break;
+    }
+
+    offset += pageSize;
+  }
+
+  return allLinks;
 }
 
+
+// ─────────────────────────────────────────────────────────────
+// FETCH EXPIRED / INACTIVE LINKS
+// ─────────────────────────────────────────────────────────────
 
 export async function fetchExpiredLinks(
   env
@@ -196,9 +256,15 @@ export async function fetchExpiredLinks(
         query: {
           select:
             'id,shortcode,is_active,expires_at',
+
           or:
             `(is_active.eq.false,expires_at.lt.${now})`,
-          limit: '5000',
+
+          limit:
+            '5000',
+
+          order:
+            'id.asc',
         },
       }
     );
@@ -223,6 +289,7 @@ export async function createLinkInDB(
     'POST',
     {
       body: linkData,
+
       prefer:
         'return=representation',
     }
@@ -247,7 +314,9 @@ export async function updateLinkInDB(
       query: {
         id: `eq.${id}`,
       },
+
       body: updates,
+
       prefer:
         'return=representation',
     }
@@ -270,7 +339,9 @@ export async function updateUserLinkInDB(
         id: `eq.${id}`,
         creator_id: `eq.${userId}`,
       },
+
       body: updates,
+
       prefer:
         'return=representation',
     }
@@ -294,6 +365,7 @@ export async function deleteLinkFromDB(
       query: {
         id: `eq.${id}`,
       },
+
       prefer:
         'return=minimal',
     }
@@ -315,6 +387,7 @@ export async function deleteUserLinkFromDB(
         id: `eq.${id}`,
         creator_id: `eq.${userId}`,
       },
+
       prefer:
         'return=minimal',
     }
@@ -350,15 +423,17 @@ export async function d1RecordClick(
       VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
-  await stmt.bind(
-    eventId,
-    event.shortcode,
-    event.clicked_at,
-    event.country || null,
-    event.device_type || null,
-    event.referrer || null,
-    event.visitor_hash || null
-  ).run();
+  await stmt
+    .bind(
+      eventId,
+      event.shortcode,
+      event.clicked_at,
+      event.country || null,
+      event.device_type || null,
+      event.referrer || null,
+      event.visitor_hash || null
+    )
+    .run();
 }
 
 
@@ -366,34 +441,35 @@ export async function d1RecordClick(
 // SYNC SNAPSHOT
 // ─────────────────────────────────────────────────────────────
 //
-// IMPORTANT:
+// First capture MAX(id).
 //
-// We first capture MAX(id).
+// Clicks arriving after this point receive a larger ID
+// and remain unsynced for the next sync.
 //
-// Any click arriving AFTER this point gets a larger ID
-// and remains unsynced for the next evening sync.
-//
-// This prevents click loss.
+// This prevents click loss during synchronization.
 // ─────────────────────────────────────────────────────────────
 
 export async function d1GetSyncSnapshot(
   env
 ) {
   const result =
-    await env.SHORTUL_DB.prepare(`
-      SELECT
-        COALESCE(
-          MAX(id),
-          0
-        ) AS max_id
-      FROM click_buffer
-      WHERE synced = 0
-    `).first();
+    await env.SHORTUL_DB
+      .prepare(`
+        SELECT
+          COALESCE(
+            MAX(id),
+            0
+          ) AS max_id
+        FROM click_buffer
+        WHERE synced = 0
+      `)
+      .first();
 
   return {
-    maxId: Number(
-      result?.max_id || 0
-    ),
+    maxId:
+      Number(
+        result?.max_id || 0
+      ),
   };
 }
 
@@ -411,35 +487,52 @@ export async function d1ReadAggregates(
   }
 
   const result =
-    await env.SHORTUL_DB.prepare(`
-      SELECT
-        shortcode,
-        substr(clicked_at, 1, 10) AS date,
-        substr(clicked_at, 12, 2) AS hour,
-        country,
-        device_type,
-        referrer,
-        COUNT(*) AS clicks,
-        COUNT(
-          DISTINCT visitor_hash
-        ) AS unique_visitors
-      FROM click_buffer
-      WHERE
-        synced = 0
-        AND id <= ?
-      GROUP BY
-        shortcode,
-        date,
-        hour,
-        country,
-        device_type,
-        referrer
-      ORDER BY
-        date,
-        hour
-    `)
-    .bind(maxId)
-    .all();
+    await env.SHORTUL_DB
+      .prepare(`
+        SELECT
+          shortcode,
+          substr(
+            clicked_at,
+            1,
+            10
+          ) AS date,
+
+          substr(
+            clicked_at,
+            12,
+            2
+          ) AS hour,
+
+          country,
+          device_type,
+          referrer,
+
+          COUNT(*) AS clicks,
+
+          COUNT(
+            DISTINCT visitor_hash
+          ) AS unique_visitors
+
+        FROM click_buffer
+
+        WHERE
+          synced = 0
+          AND id <= ?
+
+        GROUP BY
+          shortcode,
+          date,
+          hour,
+          country,
+          device_type,
+          referrer
+
+        ORDER BY
+          date,
+          hour
+      `)
+      .bind(maxId)
+      .all();
 
   return result?.results || [];
 }
@@ -449,11 +542,11 @@ export async function d1ReadAggregates(
 // DAILY UNIQUE VISITORS
 // ─────────────────────────────────────────────────────────────
 //
-// Do NOT calculate daily unique visitors by adding hourly
-// unique visitors. The same visitor may appear in multiple
-// hours.
+// We do NOT add hourly unique visitors.
 //
-// This query calculates the real daily DISTINCT count.
+// The same visitor can appear in multiple hours.
+//
+// This query calculates the actual daily DISTINCT count.
 // ─────────────────────────────────────────────────────────────
 
 export async function d1ReadDailyUnique(
@@ -465,26 +558,37 @@ export async function d1ReadDailyUnique(
   }
 
   const result =
-    await env.SHORTUL_DB.prepare(`
-      SELECT
-        shortcode,
-        substr(clicked_at, 1, 10) AS date,
-        COUNT(
-          DISTINCT visitor_hash
-        ) AS unique_visitors
-      FROM click_buffer
-      WHERE
-        synced = 0
-        AND id <= ?
-        AND visitor_hash IS NOT NULL
-      GROUP BY
-        shortcode,
-        date
-      ORDER BY
-        date
-    `)
-    .bind(maxId)
-    .all();
+    await env.SHORTUL_DB
+      .prepare(`
+        SELECT
+          shortcode,
+
+          substr(
+            clicked_at,
+            1,
+            10
+          ) AS date,
+
+          COUNT(
+            DISTINCT visitor_hash
+          ) AS unique_visitors
+
+        FROM click_buffer
+
+        WHERE
+          synced = 0
+          AND id <= ?
+          AND visitor_hash IS NOT NULL
+
+        GROUP BY
+          shortcode,
+          date
+
+        ORDER BY
+          date
+      `)
+      .bind(maxId)
+      .all();
 
   return result?.results || [];
 }
@@ -494,7 +598,7 @@ export async function d1ReadDailyUnique(
 // MARK SYNCED
 // ─────────────────────────────────────────────────────────────
 //
-// ONLY rows inside the captured snapshot are marked synced.
+// Only rows inside the captured snapshot are marked synced.
 // New clicks remain untouched.
 // ─────────────────────────────────────────────────────────────
 
@@ -506,13 +610,14 @@ export async function d1MarkSynced(
     return;
   }
 
-  await env.SHORTUL_DB.prepare(`
-    UPDATE click_buffer
-    SET synced = 1
-    WHERE
-      synced = 0
-      AND id <= ?
-  `)
+  await env.SHORTUL_DB
+    .prepare(`
+      UPDATE click_buffer
+      SET synced = 1
+      WHERE
+        synced = 0
+        AND id <= ?
+    `)
     .bind(maxId)
     .run();
 }
@@ -521,17 +626,26 @@ export async function d1MarkSynced(
 // ─────────────────────────────────────────────────────────────
 // CLEANUP
 // ─────────────────────────────────────────────────────────────
+//
+// Keep synced click-buffer records for 7 days.
+// Long-term statistics live in Supabase.
+// ─────────────────────────────────────────────────────────────
 
 export async function d1CleanupSynced(
   env
 ) {
-  await env.SHORTUL_DB.prepare(`
-    DELETE FROM click_buffer
-    WHERE
-      synced = 1
-      AND clicked_at <
-        datetime('now', '-7 days')
-  `).run();
+  await env.SHORTUL_DB
+    .prepare(`
+      DELETE FROM click_buffer
+      WHERE
+        synced = 1
+        AND clicked_at <
+          datetime(
+            'now',
+            '-7 days'
+          )
+    `)
+    .run();
 }
 
 
@@ -553,6 +667,7 @@ export async function batchUpsertClickStats(
     'POST',
     {
       body: rows,
+
       prefer:
         'resolution=merge-duplicates,return=minimal',
     }
@@ -578,6 +693,7 @@ export async function batchUpsertDailyStats(
     'POST',
     {
       body: rows,
+
       prefer:
         'resolution=merge-duplicates,return=minimal',
     }
@@ -593,38 +709,52 @@ export async function d1AdminStats(
   env
 ) {
   const total =
-    await env.SHORTUL_DB.prepare(`
-      SELECT COUNT(*) AS total
-      FROM click_buffer
-    `).first();
+    await env.SHORTUL_DB
+      .prepare(`
+        SELECT
+          COUNT(*) AS total
+        FROM click_buffer
+      `)
+      .first();
 
   const today =
-    await env.SHORTUL_DB.prepare(`
-      SELECT COUNT(*) AS total
-      FROM click_buffer
-      WHERE substr(clicked_at, 1, 10)
-        = date('now')
-    `).first();
+    await env.SHORTUL_DB
+      .prepare(`
+        SELECT
+          COUNT(*) AS total
+        FROM click_buffer
+        WHERE
+          substr(
+            clicked_at,
+            1,
+            10
+          ) = date('now')
+      `)
+      .first();
 
   const top =
-    await env.SHORTUL_DB.prepare(`
-      SELECT
-        shortcode,
-        COUNT(*) AS clicks
-      FROM click_buffer
-      GROUP BY shortcode
-      ORDER BY clicks DESC
-      LIMIT 20
-    `).all();
+    await env.SHORTUL_DB
+      .prepare(`
+        SELECT
+          shortcode,
+          COUNT(*) AS clicks
+        FROM click_buffer
+        GROUP BY shortcode
+        ORDER BY clicks DESC
+        LIMIT 20
+      `)
+      .all();
 
   return {
-    total_clicks: Number(
-      total?.total || 0
-    ),
+    total_clicks:
+      Number(
+        total?.total || 0
+      ),
 
-    today_clicks: Number(
-      today?.total || 0
-    ),
+    today_clicks:
+      Number(
+        today?.total || 0
+      ),
 
     top_links:
       top?.results || [],
